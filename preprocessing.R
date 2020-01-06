@@ -103,8 +103,9 @@ mokotow_x_self_cross_joined <- mokotow_x_with_slot_time_limits %>%
 # x - queued
 
 # any person that enqueued in given slot.x match with slot.y that served any of people enqueued in that slot
-# start_qued_person < serving_person_start &  serving_person_end < end_qued_person |
+# start_qued_person < serving_person_start & serving_person_end < end_qued_person |
 # serving_person_start < end_qued_person < serving_person_end | serving_person_start < start_qued_person < serving_person_end
+
 mokotow_x_paired_served_enqueued_slots <- mokotow_x_self_cross_joined %>% filter(
   start_last_queuer_nr.x < start_served_nr.y & end_served_nr.y < end_last_queuer_nr.x |
     start_served_nr.y <= end_last_queuer_nr.x & end_last_queuer_nr.x < end_served_nr.y |
@@ -118,8 +119,6 @@ mokotow_x_slots_wait_time <- mokotow_x_paired_served_enqueued_slots %>% filter(s
          width = end_time.x - start_time.x)
   
 
-
-
 mokotow_x_avg_wait_time <- mokotow_x_slots_wait_time %>% 
   group_by(time_slot, width) %>%
   summarise(
@@ -127,8 +126,15 @@ mokotow_x_avg_wait_time <- mokotow_x_slots_wait_time %>%
   )
 
 slot_even = as.logical(1:nrow(mokotow_x_avg_wait_time)%%2)
-mokotow_x_avg_wait_time %>% ggplot(aes(x=time_slot, y = avg_wait_time, width =as.numeric(mokotow_x_avg_wait_time$width, "secs"), fill=slot_even )) +
-  geom_bar(stat = "identity" )
+# Plot showing how long on average people had to wait until getting served
+mokotow_x_avg_wait_time %>% 
+  ggplot(aes(x = time_slot, 
+             y = avg_wait_time,
+             width =as.numeric(mokotow_x_avg_wait_time$width, "secs"),
+             fill=slot_even )) +
+  geom_bar(stat = "identity" ) +
+  ggtitle(label = mokotow_x_queue[1, "name"],
+          subtitle = mokotow_x_queue[1, "nazwaGrupy"])
                                          
 
 
