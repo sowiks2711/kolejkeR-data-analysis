@@ -37,3 +37,8 @@ vignettes/*.pdf
 
 # R Environment Variables
 .Renviron
+
+ec2_commands_history
+kolejkeR_data.csv
+kolejker.pem
+
