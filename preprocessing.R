@@ -4,17 +4,49 @@ library(rlang)
 library(tidyr)
 library(hms)
 
-data <- read.csv("./kolejkeR_data.csv")
+data <- read.csv("./kolejkeR_data.csv", fileEncoding = "utf-8")
+
 head(data)
+
 data %>% select(time) %>% unique()
 data %>% select(date) %>% group_by(date) %>% summarise(n())
 data %>% filter(date == "2020-12-30" | date == "2020-12-31") %>% select(name) %>% unique()
 data %>% filter(date == "2019-12-30" | date == "2019-12-31") %>% select(name) %>% unique()
 data %>% select(name) %>% unique()
 
-mokotow_queue <- data %>% filter(name == "UD_Mokotow_1")  %>% unique() 
-mokotow_queue[['date_time_posix']] <- as.POSIXct(strptime(paste(mokotow_queue[['time']], mokotow_queue[['date']]), format="%H:%M %Y-%m-%d", tz="Europe/Warsaw"))
-mokotow_queue[['time_posix']] <- as.POSIXct(strptime(mokotow_queue[['time']], format="%H:%M", tz="Europe/Warsaw"))
+data[['date_time_posix']]<- as.POSIXct(strptime(paste(data[['time']], data[['date']]), format="%H:%M %Y-%m-%d", tz="Europe/Warsaw"))
+data[['time_posix']] <- as.POSIXct(strptime(data[['time']], format="%H:%M", tz="Europe/Warsaw"))
+parse_served_number <- function(queuer_token_col) {
+  as.numeric(gsub("[[:alpha:]](\\d*)", "\\1", queuer_token_col, perl=TRUE))
+}
+data_with_queuers_count <- data %>%  mutate(served_people=replace_na(parse_served_number(aktualnyNumer),0))
+
+
+data_with_queuers_count %>% filter(name == "UD_Srodmiescie_2")
+
+# Avg nr of served people per day
+data_with_queuers_count %>% 
+  filter(liczbaCzynnychStan != 0) %>% # filters out days that offices doesn't work
+  group_by(name, date) %>% 
+  summarise(all_served_people = max(served_people)) %>% 
+  group_by(name) %>% 
+  summarise(avg_served_per_day = mean(all_served_people)) %>% 
+  arrange(desc(avg_served_per_day)) %>%
+  mutate(kolejka=reorder(name, avg_served_per_day)) %>% 
+  ggplot(aes(x = kolejka, y = avg_served_per_day)) +
+  geom_col() + coord_flip()
+  
+# Avg nr of people in queue per day
+data_with_queuers_count %>% 
+  filter(liczbaCzynnychStan != 0) %>% # filters out days that offices doesn't work
+  group_by(name, date) %>% 
+  summarise(avg_queuers = mean(liczbaKlwKolejce)) %>% 
+  group_by(name) %>% 
+  summarise(avg_queuers_per_day = mean(avg_queuers)) %>% 
+  arrange(desc(avg_queuers_per_day)) %>% mutate(kolejka=reorder(name, avg_queuers_per_day)) %>% 
+  ggplot(aes(x = kolejka, y = avg_queuers_per_day)) +
+  geom_col() + coord_flip() + theme_bw()
+
 
 wrap_plot_queues <- function(office_data, y_var, title_text, subtitle_text) {
   office_data %>% ggplot(aes(x=time_posix, y=!!enquo(y_var), color=date)) +
@@ -23,14 +55,10 @@ wrap_plot_queues <- function(office_data, y_var, title_text, subtitle_text) {
     ggtitle(label = title_text, subtitle = subtitle_text)
 }
 
-parse_served_number <- function(queuer_token_col) {
-  as.numeric(gsub("[[:alpha:]](\\d*)", "\\1", queuer_token_col, perl=TRUE))
-}
-
-mokotow_queue_with_served_number <- mokotow_queue %>% mutate(served_people=replace_na(parse_served_number(aktualnyNumer),0))
 
 
-mokotow_x_queue <- mokotow_queue_with_served_number %>% filter(literaGrupy == "X" )
+
+mokotow_x_queue <- data_with_queuers_count %>% filter(literaGrupy == "X" & name == "UD_Mokotow_1")
 # Graph showing how nr of served people grows for different time slots and dates
 wrap_plot_queues(mokotow_x_queue, 
                  served_people, 
@@ -42,7 +70,7 @@ wrap_plot_queues(mokotow_x_queue,
                  liczbaKlwKolejce, 
                  mokotow_x_queue[1, "name"],
                  mokotow_x_queue[1, "nazwaGrupy"])
-
+mokotow_queue_with_served_number <- data_with_queuers_count %>% filter(name == "UD_Mokotow_1")
 data_with_slot_nr <- mokotow_queue_with_served_number %>%
   group_by(date, literaGrupy) %>%
   arrange(time) %>%
