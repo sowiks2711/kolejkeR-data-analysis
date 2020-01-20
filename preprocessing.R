@@ -3,16 +3,18 @@ library(dplyr)
 library(rlang)
 library(tidyr)
 library(hms)
+library(ggrepel)
 
 data <- read.csv("./kolejkeR_data.csv", fileEncoding = "utf-8")
 
 head(data)
 
 data %>% select(time) %>% unique()
-data %>% select(date) %>% group_by(date) %>% summarise(n())
+dates <- data %>% select(date) %>% group_by(date) %>% summarise(n())
 data %>% filter(date == "2020-12-30" | date == "2020-12-31") %>% select(name) %>% unique()
 data %>% filter(date == "2019-12-30" | date == "2019-12-31") %>% select(name) %>% unique()
 data %>% select(name) %>% unique()
+data %>% filter(liczbaCzynnychStan > 0) %>%  select(nazwaGrupy) %>% unique() %>% count()
 
 data[['date_time_posix']]<- as.POSIXct(strptime(paste(data[['time']], data[['date']]), format="%H:%M %Y-%m-%d", tz="Europe/Warsaw"))
 data[['time_posix']] <- as.POSIXct(strptime(data[['time']], format="%H:%M", tz="Europe/Warsaw"))
@@ -48,6 +50,43 @@ data_with_queuers_count %>%
   geom_col() + coord_flip() + theme_bw()
 
 
+# Avg nr of served people per day
+data_with_queuers_count %>% 
+  filter(liczbaCzynnychStan != 0) %>% # filters out days that offices doesn't work
+  group_by(name, nazwaGrupy, date) %>% 
+  summarise(all_served_people = max(served_people)) %>% 
+  group_by(name, nazwaGrupy) %>% 
+  summarise(avg_served_per_day = mean(all_served_people)) %>% 
+  ggplot(aes(x = name, y = avg_served_per_day)) +
+  geom_point()
+    
+# Avg nr of people in queue per day
+jitter_report <- data_with_queuers_count %>% 
+  filter(liczbaCzynnychStan != 0) %>% # filters out days that offices doesn't work
+  group_by(name, nazwaGrupy, date) %>% 
+  summarise(all_queued_people = mean(liczbaKlwKolejce)) %>% 
+  group_by(name, nazwaGrupy) %>% 
+  summarise(avg_queue_len = mean(all_queued_people))
+  
+pos = position_jitter(width = 0.5, seed = 1)
+ggplot(jitter_report, aes(x = name, y = avg_queue_len, color=avg_queue_len>7)) +
+  geom_point(position = pos ) +
+  geom_label_repel(
+    aes(name,avg_queue_len,label=ifelse(avg_queue_len > 7, as.character(nazwaGrupy), '')),
+    box.padding   = 0.35, 
+    point.padding = 0.5,
+    segment.color = 'grey50',
+    position = pos )
+
+
+queueu_names <- data_with_queuers_count %>% 
+  filter(liczbaCzynnychStan != 0) %>% # filters out days that offices doesn't work
+  group_by(name, nazwaGrupy, date) %>% 
+  summarise(all_queued_people = mean(liczbaKlwKolejce)) %>% group_by(nazwaGrupy) %>% count()
+
+
+data_with_queuers_count %>% filter(name == "UD_Mokotow_1") %>% select(nazwaGrupy) %>% unique()
+
 wrap_plot_queues <- function(office_data, y_var, title_text, subtitle_text) {
   office_data %>% ggplot(aes(x=time_posix, y=!!enquo(y_var), color=date)) +
     geom_point() +
@@ -78,7 +117,7 @@ data_with_slot_nr <- mokotow_queue_with_served_number %>%
   ungroup()
 
 mokotow_x_with_slot_nr <- data_with_slot_nr %>%  
-  filter(literaGrupy == "X" & date == "2020-12-30")
+  filter(literaGrupy == "X" & date == "2020-12-30" & liczbaCzynnychStan != 0)
 
 
 mokotow_x_with_slot_time_limits <- mokotow_x_with_slot_nr %>%
