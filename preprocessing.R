@@ -4,6 +4,8 @@ library(rlang)
 library(tidyr)
 library(hms)
 library(ggrepel)
+library(ggthemes)
+library(pals)
 
 data <- read.csv("./kolejkeR_data.csv", fileEncoding = "utf-8")
 
@@ -13,7 +15,7 @@ data %>% select(time) %>% unique()
 dates <- data %>% select(date) %>% group_by(date) %>% summarise(n())
 data %>% filter(date == "2020-12-30" | date == "2020-12-31") %>% select(name) %>% unique()
 data %>% filter(date == "2019-12-30" | date == "2019-12-31") %>% select(name) %>% unique()
-data %>% select(name) %>% unique()
+data %>% select(name) %>% unique() %>% count()
 data %>% filter(liczbaCzynnychStan > 0) %>%  select(nazwaGrupy) %>% unique() %>% count()
 
 data[['date_time_posix']]<- as.POSIXct(strptime(paste(data[['time']], data[['date']]), format="%H:%M %Y-%m-%d", tz="Europe/Warsaw"))
@@ -36,7 +38,7 @@ data_with_queuers_count %>%
   arrange(desc(avg_served_per_day)) %>%
   mutate(kolejka=reorder(name, avg_served_per_day)) %>% 
   ggplot(aes(x = kolejka, y = avg_served_per_day)) +
-  geom_col() + coord_flip()
+  geom_col() + coord_flip() + theme_tufte()
   
 # Avg nr of people in queue per day
 data_with_queuers_count %>% 
@@ -47,7 +49,7 @@ data_with_queuers_count %>%
   summarise(avg_queuers_per_day = mean(avg_queuers)) %>% 
   arrange(desc(avg_queuers_per_day)) %>% mutate(kolejka=reorder(name, avg_queuers_per_day)) %>% 
   ggplot(aes(x = kolejka, y = avg_queuers_per_day)) +
-  geom_col() + coord_flip() + theme_bw()
+  geom_col() + coord_flip() + theme_tufte()
 
 
 # Avg nr of served people per day
@@ -69,15 +71,19 @@ jitter_report <- data_with_queuers_count %>%
   summarise(avg_queue_len = mean(all_queued_people))
   
 pos = position_jitter(width = 0.5, seed = 1)
-ggplot(jitter_report, aes(x = name, y = avg_queue_len, color=avg_queue_len>7)) +
+ggplot(jitter_report, aes(x = name, y = avg_queue_len, color=name)) +
   geom_point(position = pos ) +
   geom_label_repel(
     aes(name,avg_queue_len,label=ifelse(avg_queue_len > 7, as.character(nazwaGrupy), '')),
     box.padding   = 0.35, 
     point.padding = 0.5,
     segment.color = 'grey50',
-    position = pos )
-
+    position = pos ) +
+  theme_bw() +
+  scale_colour_manual(values = cols25(n=21)) +
+  theme(axis.text.x = element_text(angle = 45, 
+                                   hjust = 1),
+        legend.position = "none")
 
 queueu_names <- data_with_queuers_count %>% 
   filter(liczbaCzynnychStan != 0) %>% # filters out days that offices doesn't work
@@ -103,6 +109,20 @@ wrap_plot_queues(mokotow_x_queue,
                  served_people, 
                  mokotow_x_queue[1, "name"],
                  mokotow_x_queue[1, "nazwaGrupy"])
+
+mokotow_10_00 <- data_with_queuers_count %>%
+  filter(name == "UD_Mokotow_1" & time == "10:00")
+
+mokotow_10_00 
+
+queues_for_12_00_grp <- data_with_queuers_count %>% filter(time == "12:00" & liczbaCzynnychStan > 0) %>%  
+  pivot_longer(cols=c(liczbaCzynnychStan, liczbaKlwKolejce), names_to = "Type", values_to= "Count") %>% 
+  mutate(Count = ifelse(Type == "liczbaCzynnychStan", -Count, Count)) %>% 
+  group_by(name, nazwaGrupy)
+
+queues_for_12_00_grp %>% filter(name == "UD_Mokotow_1") %>%  
+  ggplot(aes(x = nazwaGrupy, y = Count, fill = Type)) +
+  geom_bar(stat = "identity", width = .6) 
 
 # Graph showing how nr of queued people changes for different time slots and dates
 wrap_plot_queues(mokotow_x_queue, 
