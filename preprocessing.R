@@ -4,7 +4,7 @@ library(rlang)
 library(tidyr)
 library(hms)
 library(ggrepel)
-library(ggthemes)
+#library(ggthemes)
 library(pals)
 
 data <- read.csv("./kolejkeR_data.csv", fileEncoding = "utf-8")
@@ -17,6 +17,7 @@ data %>% filter(date == "2020-12-30" | date == "2020-12-31") %>% select(name) %>
 data %>% filter(date == "2019-12-30" | date == "2019-12-31") %>% select(name) %>% unique()
 data %>% select(name) %>% unique() %>% count()
 data %>% filter(liczbaCzynnychStan > 0) %>%  select(nazwaGrupy) %>% unique() %>% count()
+data %>% filter(liczbaCzynnychStan > 0) %>%  select(date) %>% group_by(date) %>% summarise(n())
 
 data[['date_time_posix']]<- as.POSIXct(strptime(paste(data[['time']], data[['date']]), format="%H:%M %Y-%m-%d", tz="Europe/Warsaw"))
 data[['time_posix']] <- as.POSIXct(strptime(data[['time']], format="%H:%M", tz="Europe/Warsaw"))
@@ -24,13 +25,11 @@ parse_served_number <- function(queuer_token_col) {
   as.numeric(gsub("[[:alpha:]](\\d*)", "\\1", queuer_token_col, perl=TRUE))
 }
 data_with_queuers_count <- data %>%  mutate(served_people=replace_na(parse_served_number(aktualnyNumer),0))
-
-
-data_with_queuers_count %>% filter(name == "UD_Srodmiescie_2")
+open_queues_preprocessed_data <- data_with_queuers_count %>% filter(liczbaCzynnychStan > 0 & status == 1 )
 
 # Avg nr of served people per day
-data_with_queuers_count %>% 
-  filter(liczbaCzynnychStan != 0) %>% # filters out days that offices doesn't work
+open_queues_preprocessed_data %>% 
+  filter(liczbaCzynnychStan > 0 & status == 1 ) %>% # filters out days that offices doesn't work
   group_by(name, date) %>% 
   summarise(all_served_people = max(served_people)) %>% 
   group_by(name) %>% 
@@ -38,43 +37,47 @@ data_with_queuers_count %>%
   arrange(desc(avg_served_per_day)) %>%
   mutate(kolejka=reorder(name, avg_served_per_day)) %>% 
   ggplot(aes(x = kolejka, y = avg_served_per_day)) +
-  geom_col() + coord_flip() + theme_tufte()
+  geom_col() + coord_flip() + theme_bw()
   
 # Avg nr of people in queue per day
 data_with_queuers_count %>% 
-  filter(liczbaCzynnychStan != 0) %>% # filters out days that offices doesn't work
+  filter(liczbaCzynnychStan > 0 & status == 1 ) %>% # filters out days that offices doesn't work
   group_by(name, date) %>% 
-  summarise(avg_queuers = mean(liczbaKlwKolejce)) %>% 
+  summarise(avg_queue_len = mean(liczbaKlwKolejce)) %>% 
   group_by(name) %>% 
-  summarise(avg_queuers_per_day = mean(avg_queuers)) %>% 
-  arrange(desc(avg_queuers_per_day)) %>% mutate(kolejka=reorder(name, avg_queuers_per_day)) %>% 
-  ggplot(aes(x = kolejka, y = avg_queuers_per_day)) +
-  geom_col() + coord_flip() + theme_tufte()
+  summarise(avg_queue_len_per_day = mean(avg_queue_len)) %>% 
+  #summarise(avg_queue_len_per_day = mean(liczbaKlwKolejce)) %>% 
+  mutate(kolejka=reorder(name, avg_queue_len_per_day)) %>% 
+  ggplot(aes(x = kolejka, y = avg_queue_len_per_day)) +
+  geom_col() + coord_flip() + theme_bw()
 
 
-# Avg nr of served people per day
-data_with_queuers_count %>% 
-  filter(liczbaCzynnychStan != 0) %>% # filters out days that offices doesn't work
+common_week_data <- data_with_queuers_count %>% filter(date_time_posix > as.POSIXct(strptime("2020-01-07", format="%Y-%m-%d", tz="Europe/Warsaw")) &
+                                     date_time_posix < as.POSIXct(strptime("2020-01-20", format="%Y-%m-%d", tz="Europe/Warsaw"))) 
+
+common_week_data %>% 
+  filter(liczbaCzynnychStan > 0 & status == 1 ) %>%  # filters out days that offices doesn't work
+  mutate(week_day = factor(weekdays(date_time_posix), levels=c("poniedziałek", "wtorek", "środa", "czwartek", "piątek"))) %>% 
+  group_by(week_day) %>% 
+  summarise(avg_queue_len = mean(liczbaKlwKolejce)) %>% 
+  ggplot(aes(x = week_day, y = avg_queue_len)) +
+  geom_col() +
+  theme_bw() +
+  theme( axis.text.x = element_text(angle=45, hjust = 1))
+
+
+jitter_served_people <- data_with_queuers_count %>% 
+  filter(liczbaCzynnychStan > 0 & status == 1 ) %>% # filters out days that offices doesn't work
   group_by(name, nazwaGrupy, date) %>% 
   summarise(all_served_people = max(served_people)) %>% 
   group_by(name, nazwaGrupy) %>% 
-  summarise(avg_served_per_day = mean(all_served_people)) %>% 
-  ggplot(aes(x = name, y = avg_served_per_day)) +
-  geom_point()
-    
-# Avg nr of people in queue per day
-jitter_report <- data_with_queuers_count %>% 
-  filter(liczbaCzynnychStan != 0) %>% # filters out days that offices doesn't work
-  group_by(name, nazwaGrupy, date) %>% 
-  summarise(all_queued_people = mean(liczbaKlwKolejce)) %>% 
-  group_by(name, nazwaGrupy) %>% 
-  summarise(avg_queue_len = mean(all_queued_people))
-  
+  summarise(avg_served_per_day = mean(all_served_people))
+
 pos = position_jitter(width = 0.5, seed = 1)
-ggplot(jitter_report, aes(x = name, y = avg_queue_len, color=name)) +
+ggplot(jitter_served_people, aes(x = name, y = avg_served_per_day, color=name)) +
   geom_point(position = pos ) +
-  geom_label_repel(
-    aes(name,avg_queue_len,label=ifelse(avg_queue_len > 7, as.character(nazwaGrupy), '')),
+  geom_text_repel(
+    aes(label=ifelse(avg_served_per_day > 250, as.character(nazwaGrupy), '')),
     box.padding   = 0.35, 
     point.padding = 0.5,
     segment.color = 'grey50',
@@ -85,13 +88,30 @@ ggplot(jitter_report, aes(x = name, y = avg_queue_len, color=name)) +
                                    hjust = 1),
         legend.position = "none")
 
-queueu_names <- data_with_queuers_count %>% 
+# Avg nr of people in queue per day
+jitter_queue_len <- data_with_queuers_count %>% 
   filter(liczbaCzynnychStan != 0) %>% # filters out days that offices doesn't work
   group_by(name, nazwaGrupy, date) %>% 
-  summarise(all_queued_people = mean(liczbaKlwKolejce)) %>% group_by(nazwaGrupy) %>% count()
+  summarise(all_queued_people = mean(liczbaKlwKolejce)) %>% 
+  group_by(name, nazwaGrupy) %>% 
+  summarise(avg_queue_len = mean(all_queued_people))
+
+pos = position_jitter(width = 0.5, seed = 2)
+ggplot(jitter_queue_len, aes(x = name, y = avg_queue_len, color=name)) +
+  geom_point(position = pos ) +
+  geom_text_repel(
+    aes(label=ifelse(avg_queue_len > 7, as.character(nazwaGrupy), '')),
+    box.padding   = 0.35, 
+    point.padding = 0.5,
+    segment.color = 'grey50',
+    position = pos ) +
+  theme_bw() +
+  scale_colour_manual(values = cols25(n=21)) +
+  theme(axis.text.x = element_text(angle = 45, 
+                                   hjust = 1),
+        legend.position = "none")
 
 
-data_with_queuers_count %>% filter(name == "UD_Mokotow_1") %>% select(nazwaGrupy) %>% unique()
 
 wrap_plot_queues <- function(office_data, y_var, title_text, subtitle_text) {
   office_data %>% ggplot(aes(x=time_posix, y=!!enquo(y_var), color=date)) +
@@ -102,8 +122,7 @@ wrap_plot_queues <- function(office_data, y_var, title_text, subtitle_text) {
 
 
 
-
-mokotow_x_queue <- data_with_queuers_count %>% filter(literaGrupy == "X" & name == "UD_Mokotow_1")
+mokotow_x_queue <- common_week_data %>% filter(literaGrupy == "X" & name == "UD_Mokotow_1")
 # Graph showing how nr of served people grows for different time slots and dates
 wrap_plot_queues(mokotow_x_queue, 
                  served_people, 
@@ -122,14 +141,15 @@ queues_for_12_00_grp <- data_with_queuers_count %>% filter(time == "12:00" & lic
 
 queues_for_12_00_grp %>% filter(name == "UD_Mokotow_1") %>%  
   ggplot(aes(x = nazwaGrupy, y = Count, fill = Type)) +
-  geom_bar(stat = "identity", width = .6) 
+  geom_bar(stat = "identity", width = .6) +
+  coord_flip()
 
 # Graph showing how nr of queued people changes for different time slots and dates
 wrap_plot_queues(mokotow_x_queue, 
                  liczbaKlwKolejce, 
                  mokotow_x_queue[1, "name"],
                  mokotow_x_queue[1, "nazwaGrupy"])
-mokotow_queue_with_served_number <- data_with_queuers_count %>% filter(name == "UD_Mokotow_1")
+mokotow_queue_with_served_number <- common_week_data %>% filter(name == "UD_Mokotow_1")
 data_with_slot_nr <- mokotow_queue_with_served_number %>%
   group_by(date, literaGrupy) %>%
   arrange(time) %>%
@@ -137,7 +157,7 @@ data_with_slot_nr <- mokotow_queue_with_served_number %>%
   ungroup()
 
 mokotow_x_with_slot_nr <- data_with_slot_nr %>%  
-  filter(literaGrupy == "X" & date == "2020-12-30" & liczbaCzynnychStan != 0)
+  filter(literaGrupy == "X" & date == "2020-01-14" & liczbaCzynnychStan != 0)
 
 
 mokotow_x_with_slot_time_limits <- mokotow_x_with_slot_nr %>%
